@@ -7,6 +7,7 @@ DAO ==================>>>>> IS DATA ACCESS OBJECT
 import (
 	"fmt"
 
+	"github.com/egnimos/book_store_users_api/utils/date_utils"
 	"github.com/egnimos/book_store_users_api/utils/errors"
 )
 
@@ -42,6 +43,7 @@ func (user *User) Save() *errors.RestErr {
 	}
 
 	// if user doesn't exists then save it to the database
+	user.DateCreated = date_utils.GetNowString()
 	usersDB[user.ID] = user
 	return nil
 }
