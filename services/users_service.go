@@ -6,7 +6,7 @@ import (
 )
 
 //GetUser : fetch the user from database
-func GetUser(userID int) (*users.User, *errors.RestErr) {
+func GetUser(userID int64) (*users.User, *errors.RestErr) {
 	result := &users.User{ID: userID}
 	if err := result.Get(); err != nil {
 		return nil, err
