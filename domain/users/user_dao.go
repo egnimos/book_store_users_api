@@ -5,16 +5,20 @@ DAO ==================>>>>> IS DATA ACCESS OBJECT
 */
 
 import (
+	"fmt"
+
 	"github.com/egnimos/book_store_users_api/datasources/mysql/user_db"
-	"github.com/egnimos/book_store_users_api/utils/date_utils"
 	"github.com/egnimos/book_store_users_api/utils/errors"
 	"github.com/egnimos/book_store_users_api/utils/mysql_utils"
 )
 
 const (
-	errorNoRows     = "no rows in result set"
-	queryInsertUser = "INSERT INTO users(first_name, last_name, email, date_created) VALUES(?, ?, ?, ?);"
-	queryGetUser    = "SELECT id, first_name, last_name, email, date_created FROM users WHERE id=?;"
+	errorNoRows       = "no rows in result set"
+	queryInsertUser   = "INSERT INTO users(first_name, last_name, email, date_created, status, password) VALUES(?, ?, ?, ?, ?, ?);"
+	queryGetUser      = "SELECT id, first_name , last_name, email, date_created, status FROM users WHERE id=?;"
+	queryUpdateUser   = "UPDATE users SET first_name=?, last_name=?, email=? WHERE id=?;"
+	queryDeleteUser   = "DELETE FROM users WHERE id=?;"
+	queryFindByStatus = "SELECT id, first_name, last_name, email, date_created, status FROM users WHERE status=?;"
 )
 
 //Get : fetch the user from a database of a given ID
@@ -30,7 +34,7 @@ func (user *User) Get() *errors.RestErr {
 	result := stmt.QueryRow(user.ID)
 
 	//call the scan function to executes the final statement
-	if err := result.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.DateCreated); err != nil {
+	if err := result.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.DateCreated, &user.Status); err != nil {
 		return mysql_utils.ParseError(err)
 	}
 
@@ -48,18 +52,82 @@ func (user *User) Save() *errors.RestErr {
 	defer stmt.Close()
 
 	//execute the statement
-	user.DateCreated = date_utils.GetNowString()
-	insertResult, saveErr := stmt.Exec(user.FirstName, user.LastName, user.Email, user.DateCreated)
+	insertResult, saveErr := stmt.Exec(user.FirstName, user.LastName, user.Email, user.DateCreated, user.Status, user.Password)
 	if saveErr != nil {
-		mysql_utils.ParseError(saveErr)
+		return mysql_utils.ParseError(saveErr)
 	}
 
-	// userID, err := insertResult.LastInsertId()
-	// if err != nil {
-	// 	return mysql_utils.ParseError(err)
-	// }
-	println(insertResult)
+	userID, err := insertResult.LastInsertId()
+	if err != nil {
+		return mysql_utils.ParseError(err)
+	}
+	println(userID)
 
-	// user.ID = userID
+	user.ID = userID
 	return nil
+}
+
+//Update : update user in a database
+func (user *User) Update() *errors.RestErr {
+	// prepare the statement to update the users database
+	stmt, err := user_db.Client.Prepare(queryUpdateUser)
+	if err != nil {
+		return errors.NewInternalServerError(err.Error())
+	}
+	defer stmt.Close()
+
+	//execute the statement
+	_, err = stmt.Exec(user.FirstName, user.LastName, user.Email, user.ID)
+	if err != nil {
+		return mysql_utils.ParseError(err)
+	}
+
+	return nil
+}
+
+//Delete : delete user in a database
+func (user *User) Delete() *errors.RestErr {
+	//prepare the statement to delete the user from the database
+	stmt, err := user_db.Client.Prepare(queryDeleteUser)
+	if err != nil {
+		return errors.NewInternalServerError(err.Error())
+	}
+	defer stmt.Close()
+
+	//execute the statement
+	if _, err := stmt.Exec(user.ID); err != nil {
+		return mysql_utils.ParseError(err)
+	}
+	return nil
+}
+
+//FindByStatus : find the user by status
+func (user *User) FindByStatus(status string) ([]User, *errors.RestErr) {
+	stmt, err := user_db.Client.Prepare(queryFindByStatus)
+	if err != nil {
+		return nil, errors.NewInternalServerError(err.Error())
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(status)
+	if err != nil {
+		return nil, errors.NewInternalServerError("error when trying to get the list of users")
+	}
+	defer rows.Close()
+
+	results := make([]User, 0)
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.DateCreated, &user.Status); err != nil {
+			return nil, errors.NewInternalServerError(fmt.Sprintf("error when trying to get the user while executing the Scan : %s", err.Error()))
+		}
+		//append the result
+		results = append(results, user)
+	}
+
+	//if the list of users is empty
+	if len(results) == 0 {
+		return nil, errors.NewNotFoundError("there is no user list in the database")
+	}
+	return results, nil
 }
