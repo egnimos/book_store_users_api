@@ -9,6 +9,7 @@ import (
 	"github.com/egnimos/book_store_users_api/domain/users"
 	"github.com/egnimos/book_store_users_api/services"
 	"github.com/egnimos/book_store_users_api/utils/errors"
+	"github.com/egnimos/bookstore-oauth-shared-library/oauth"
 )
 
 /*
@@ -27,7 +28,7 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 	//send the user struct to the services
-	result, err := services.CreateUser(user)
+	result, err := services.UsersService.CreateUser(user)
 	if err != nil {
 		c.JSON(err.Status, err)
 		return
@@ -37,6 +38,11 @@ func CreateUser(c *gin.Context) {
 
 //GetUser : this function will get the user info of given ID
 func GetUser(c *gin.Context) {
+	//authenticate the user and check the user by the auth_token
+	if err := oauth.AuthenticateRequest(c.Request); err != nil {
+		c.JSON(err.Status, err)
+		return
+	}
 	// strconv.ParseInt(c.Param("user_id"), 10, 64)
 	// strconv.Atoi(c.Param("user_id"))
 	userID, userErr := strconv.ParseInt(c.Param("user_id"), 10, 64)
@@ -46,12 +52,18 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	// send the id to the services
-	user, getErr := services.GetUser(userID)
+	user, getErr := services.UsersService.GetUser(userID)
 	if getErr != nil {
 		c.JSON(getErr.Status, getErr)
 		return
 	}
-	c.JSON(http.StatusOK, user.Marshall(c.GetHeader("X-Public") == "true"))
+
+	//check whether the caller ID is the same with the user ID
+	if oauth.GetCallerId(c.Request) == user.ID {
+		c.JSON(http.StatusOK, user.Marshall(false))
+		return
+	}
+	c.JSON(http.StatusOK, user.Marshall(oauth.IsPublic(c.Request)))
 }
 
 //UpdateUser : this user usually update the data from the database...
@@ -77,7 +89,7 @@ func UpdateUser(c *gin.Context) {
 	//check whether the request method is PATCH and PUT
 	isPartial := c.Request.Method == http.MethodPatch
 
-	result, err := services.UpdateUser(isPartial, user)
+	result, err := services.UsersService.UpdateUser(isPartial, user)
 	if err != nil {
 		c.JSON(err.Status, err)
 		return
@@ -97,7 +109,7 @@ func DeleteUser(c *gin.Context) {
 	}
 
 	//send the userID to the services
-	result, deleteErr := services.DeleteUser(userID)
+	result, deleteErr := services.UsersService.DeleteUser(userID)
 	if deleteErr != nil {
 		c.JSON(deleteErr.Status, deleteErr)
 		return
@@ -110,10 +122,27 @@ func DeleteUser(c *gin.Context) {
 func SearchUser(c *gin.Context) {
 	status := c.Query("status")
 
-	usersList, err := services.SearchUser(status)
+	usersList, err := services.UsersService.SearchUser(status)
 	if err != nil {
 		c.JSON(err.Status, err)
 		return
 	}
 	c.JSON(http.StatusOK, usersList.Marshall(c.GetHeader("X-Public") == "true"))
+}
+
+//LoginUser : this methods provide the email and password to login the user
+func Login(c *gin.Context) {
+	var request users.LoginRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		restErr := errors.NewBadRequestError("invalid json body")
+		c.JSON(restErr.Status, restErr)
+		return
+	}
+	//sending the data to the service file loginUser method
+	user, err := services.UsersService.LoginUser(request)
+	if err != nil {
+		c.JSON(err.Status, err)
+		return
+	}
+	c.JSON(http.StatusOK, user.Marshall(c.GetHeader("X-Public") == "true"))
 }
